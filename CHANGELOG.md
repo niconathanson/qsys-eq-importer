@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 — 2026-07-27
+## 0.1.0 - 2026-07-27
 
 First public release.
 
@@ -17,7 +17,7 @@ First public release.
 - If the block exposes both `q.factor` and `bandwidth`, whichever one it treats as
   derived is detected automatically and the write is retried through the live one.
 - Refuses to write when the file needs more bands than the block has, naming the number
-  to set — band count is a design property no script can change.
+  to set - band count is a design property no script can change.
 - High-pass, low-pass, notch and all-pass filters are reported and skipped rather than
   approximated.
 - Shelves with no Q specified default to 0.707 (RBJ S=1), matching the FIREQ convention.

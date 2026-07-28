@@ -2,7 +2,7 @@
 
 Paste a room-correction filter list into Q-Sys Designer and have it typed into a
 Parametric EQ block for you - accurately, and in a form you can still adjust by hand
-afterwards. 
+afterwards.
 
 ![Six REW filters imported into a 9-band Parametric EQ, with the resulting response curve](docs/images/applied-full.png)
 
@@ -28,7 +28,7 @@ ordinary Parametric EQ block. Every band stays a normal, editable band.
 ## What it does
 
 - Reads **REW "Filter Settings" exports** and plain **`Type,Freq,Gain,Q` CSV**, detected
-  automatically — no format switch to set.
+  automatically - no format switch to set.
 - Converts **Q to the bandwidth-in-octaves** the block actually stores, using the RBJ
   relationship. You don't have to touch a calculator.
 - Finds the EQ blocks in your design by inspecting them, so it works regardless of what
@@ -37,7 +37,7 @@ ordinary Parametric EQ block. Every band stays a normal, editable band.
 - After writing, it **reads every value back** and reports any the block clamped or
   rejected.
 
-It is a **design-time tool**. Drop it in, import, and delete it — there is no UCI, no
+It is a **design-time tool**. Drop it in, import, and delete it - there is no UCI, no
 runtime recall, and nothing to leave behind in a running system.
 
 ## Requirements
@@ -67,7 +67,7 @@ runtime recall, and nothing to leave behind in a running system.
    your target from the dropdown.
 3. Paste your filter list into the **Filter Data** box. (Or, if the file is sitting in
    the design's own folder, type its name in the file box instead.)
-4. Tick **Dry Run** and press **Apply**. Read the table it prints — every band, with the
+4. Tick **Dry Run** and press **Apply**. Read the table it prints - every band, with the
    Q from your file and the octave width it will write.
 
    ![Dry Run preview showing each band's frequency, gain, Q and octave width](docs/images/dry-run.png)
@@ -87,7 +87,7 @@ leftovers from a previous import.
 
 ## Supported input formats
 
-**REW filter settings export** : paste the file as-is, header and all:
+**REW filter settings export**: paste the file as-is, header and all:
 
 ```
 Filter  1: ON  HS       Fc 15203.89 Hz  Gain   0.98 dB  Q 0.707
@@ -95,7 +95,7 @@ Filter  2: ON  LS       Fc   79.37 Hz  Gain  -0.37 dB  Q 0.707
 Filter  3: ON  PK       Fc   84.38 Hz  Gain   6.99 dB  Q 4.194
 ```
 
-**Generic CSV** : from a spreadsheet or any other tool:
+**Generic CSV**: from a spreadsheet or any other tool:
 
 ```
 Type,Freq(Hz),Gain(dB),Q
@@ -118,7 +118,7 @@ again.
 
 **Only peaking and shelving filters can be imported.** High-pass, low-pass, notch and
 all-pass filters have no equivalent in the Parametric EQ block. They are listed in the
-status pane and skipped — never silently approximated into something else.
+status pane and skipped - never silently approximated into something else.
 
 **Shelves without a Q default to 0.707.** REW's plain low/high shelves assume slope
 S=0.9; FIREQ designs at S=1, which is Q=0.707. When your file gives no Q for a shelf,
@@ -148,10 +148,10 @@ the band count to at least the number given, then Apply again. Nothing was writt
 **"No filters recognised."** The paste didn't look like either format. Check you copied
 the filter lines themselves, not just the file header.
 
-**A gain came back different from the file.** The block clamped it — Parametric EQ bands
+**A gain came back different from the file.** The block clamped it - Parametric EQ bands
 have a gain limit. The status pane flags which band, and the value is genuinely at the
 block's ceiling.
 
 ## License
 
-[MIT](LICENSE) — free to use, modify and redistribute, commercially or otherwise.
+[MIT](LICENSE) - free to use, modify and redistribute, commercially or otherwise.
