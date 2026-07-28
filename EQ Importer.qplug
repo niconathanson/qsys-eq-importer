@@ -25,7 +25,7 @@
 
 PluginInfo = {
   Name          = "Tools~EQ Importer",
-  Version       = "1.0",
+  Version       = "0.1.0",
   Id            = "b7c41e92-3f8a-4d16-9e5b-2a7c8d1f04b3",
   Author        = "Built for design-time tuning import",
   Description   = "Import REW or CSV parametric EQ settings into a Parametric EQ block",

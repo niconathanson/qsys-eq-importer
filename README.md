@@ -47,8 +47,8 @@ runtime recall, and nothing to leave behind in a running system.
 
 ## Installation
 
-1. Download [`EQ Importer.qplug`](EQ%20Importer.qplug) — click the file above, then the
-   download button.
+1. Download the latest `.qplug` from the
+   [Releases page](https://github.com/niconathanson/qsys-eq-importer/releases/latest).
 2. Copy it into your Q-Sys plugin folder:
 
    ```
