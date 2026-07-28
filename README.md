@@ -1,8 +1,8 @@
 # Q-Sys EQ Filter Import Plugin
 
 Paste a room-correction filter list into Q-Sys Designer and have it typed into a
-Parametric EQ block for you — accurately, and in a form you can still adjust by hand
-afterwards.
+Parametric EQ block for you - accurately, and in a form you can still adjust by hand
+afterwards. 
 
 ![Six REW filters imported into a 9-band Parametric EQ, with the resulting response curve](docs/images/applied-full.png)
 
@@ -19,7 +19,7 @@ the Q your measurement software gave you. On a multi-zone system that is hours o
 and a single transposed digit is very hard to spot afterwards.
 
 Q-Sys can import IIR biquad coefficients, but that path produces a block whose filters
-can no longer be nudged by hand — no good during commissioning, when the whole point is
+can no longer be nudged by hand, which is no good during commissioning, when the whole point is
 to sit in the room and adjust by ear.
 
 This plugin takes the third route: it reads your filter list and writes it into an
@@ -87,7 +87,7 @@ leftovers from a previous import.
 
 ## Supported input formats
 
-**REW filter settings export** — paste the file as-is, header and all:
+**REW filter settings export** : paste the file as-is, header and all:
 
 ```
 Filter  1: ON  HS       Fc 15203.89 Hz  Gain   0.98 dB  Q 0.707
@@ -95,7 +95,7 @@ Filter  2: ON  LS       Fc   79.37 Hz  Gain  -0.37 dB  Q 0.707
 Filter  3: ON  PK       Fc   84.38 Hz  Gain   6.99 dB  Q 4.194
 ```
 
-**Generic CSV** — from a spreadsheet or any other tool:
+**Generic CSV** : from a spreadsheet or any other tool:
 
 ```
 Type,Freq(Hz),Gain(dB),Q
@@ -111,7 +111,7 @@ Working examples of both are in [`samples/`](samples/).
 ## Things worth knowing
 
 **Band count is fixed before you start.** The number of bands is a *property* of the EQ
-block, and no script can change it — that's a Q-Sys restriction, not a limitation here.
+block, and no script can change it, which is a Q-Sys restriction, not a limitation here.
 If your file has more filters than the block has bands, the import stops without writing
 anything and tells you the number to set. Set it in the block's Properties and Apply
 again.
