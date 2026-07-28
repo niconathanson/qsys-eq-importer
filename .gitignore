@@ -1,0 +1,14 @@
+# Development scratch — diagnostic probes used while working out the
+# Q-Sys scripting API. Not part of the plugin.
+1_discover_peq_controls.lua
+3_find_sandbox.lua
+4_who_holds_the_values.lua
+
+# Local test design
+Test Design.qsys
+*.qsys
+
+# OS cruft
+Thumbs.db
+desktop.ini
+.DS_Store

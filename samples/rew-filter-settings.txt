@@ -1,0 +1,30 @@
+Filter Settings file
+
+Room EQ V5.31.3
+Dated: Jul 19, 2026 07:46:47 PM
+
+Notes:
+
+Shelf convention: FIREQ designs LS/HS at RBJ slope S=1 (= Q 0.707). REW's plain LS/HS assumes S=0.9; if your processor takes a shelf Q, use 0.707 to match FIREQ's predicted curve.
+
+Equaliser: Generic
+Filter  1: ON  HS       Fc 15203.89 Hz  Gain   0.98 dB  Q 0.707
+Filter  2: ON  LS       Fc   79.37 Hz  Gain  -0.37 dB  Q 0.707
+Filter  3: ON  PK       Fc   84.38 Hz  Gain   6.99 dB  Q 4.194
+Filter  4: ON  PK       Fc  740.45 Hz  Gain  -5.85 dB  Q 2.472
+Filter  5: ON  PK       Fc  284.53 Hz  Gain   4.20 dB  Q 6.000
+Filter  6: ON  PK       Fc 12159.91 Hz  Gain   3.05 dB  Q 1.339
+Filter  7: ON  PK       Fc  115.72 Hz  Gain  -0.70 dB  Q 20.000
+Filter  8: ON  PK       Fc  915.07 Hz  Gain  -2.14 dB  Q 4.721
+Filter  9: ON  PK       Fc  132.17 Hz  Gain  10.16 dB  Q 4.917
+Filter 10: ON  PK       Fc 2945.31 Hz  Gain   2.88 dB  Q 2.690
+Filter 11: ON  PK       Fc  160.31 Hz  Gain  -1.17 dB  Q 9.509
+Filter 12: ON  PK       Fc 6176.05 Hz  Gain   2.71 dB  Q 3.097
+Filter 13: ON  PK       Fc 4633.73 Hz  Gain  -1.98 dB  Q 0.509
+Filter 14: ON  PK       Fc 9538.31 Hz  Gain   0.91 dB  Q 6.000
+Filter 15: ON  None
+Filter 16: ON  None
+Filter 17: ON  None
+Filter 18: ON  None
+Filter 19: ON  None
+Filter 20: ON  None

@@ -1,0 +1,765 @@
+--[[
+  EQ IMPORTER  -  Q-Sys plugin
+  ==================================================================
+  Imports REW "Filter Settings" text or generic CSV into a
+  Parametric EQ block.
+
+  Usage:
+    1. Drag into the schematic, open the control panel.
+    2. Pick the target EQ from the dropdown (Refresh repopulates it).
+    3. Paste your EQ file into the Filter Data box.
+    4. Press Apply.
+
+  Apply writes immediately. Engage Dry Run first if you want to see
+  what would be written without touching the block.
+
+  Notes:
+    * Band count is a design PROPERTY of the target EQ. No plugin can
+      change it. If the file has more filters than the block has
+      bands, this refuses to write and tells you the number to set.
+    * The block stores bandwidth in OCTAVES; EQ files specify Q.
+      Conversion is automatic and mode-independent.
+    * Only Parametric / Low-Shelf / High-Shelf can be represented.
+      High-pass, low-pass and notch filters are reported and skipped.
+--]]
+
+PluginInfo = {
+  Name          = "Tools~EQ Importer",
+  Version       = "1.0",
+  Id            = "b7c41e92-3f8a-4d16-9e5b-2a7c8d1f04b3",
+  Author        = "Built for design-time tuning import",
+  Description   = "Import REW or CSV parametric EQ settings into a Parametric EQ block",
+  ShowDebug     = true,
+}
+
+function GetColor(props) return { 60, 90, 130 } end
+function GetPrettyName(props) return "EQ Importer" end
+
+function GetProperties()
+  return {}
+end
+
+function GetPins(props)
+  return {}
+end
+
+-- ==================================================================
+-- CONTROLS
+-- ==================================================================
+
+function GetControls(props)
+  return {
+    { Name = "TargetBlock", ControlType = "Text",   UserPin = false },
+    { Name = "Refresh",     ControlType = "Button", ButtonType = "Trigger", UserPin = false },
+    { Name = "FilterData",  ControlType = "Text",   UserPin = false },
+    { Name = "FileName",    ControlType = "Text",   UserPin = false },
+    { Name = "DryRun",      ControlType = "Button", ButtonType = "Toggle",  UserPin = false },
+    { Name = "Apply",       ControlType = "Button", ButtonType = "Trigger", UserPin = false },
+    { Name = "Status",      ControlType = "Text",   UserPin = false },
+  }
+end
+
+-- ==================================================================
+-- LAYOUT
+-- ==================================================================
+
+function GetControlLayout(props)
+  local layout, graphics = {}, {}
+
+  -- Plugin panels do not scroll, so anything taller than the panel is
+  -- simply lost. Narrow and tall: the two boxes that hold variable
+  -- amounts of text get as much vertical room as possible, and status
+  -- lines are kept short enough not to need horizontal scrolling.
+  local W    = 400
+  local PAD  = 14
+  local INNER = W - PAD * 2
+  local H    = 760
+
+  graphics[#graphics + 1] = {
+    Type = "GroupBox", Text = "EQ Importer", HTextAlign = "Left",
+    Fill = { 236, 238, 240 }, StrokeWidth = 1,
+    Position = { 0, 0 }, Size = { W, H },
+  }
+
+  local y = 26
+
+  -- Target ------------------------------------------------------
+  graphics[#graphics + 1] = {
+    Type = "Text", Text = "Target EQ block", FontSize = 11,
+    HTextAlign = "Left", Position = { PAD, y }, Size = { 200, 14 },
+  }
+  y = y + 16
+
+  layout["TargetBlock"] = {
+    Style = "ComboBox", Position = { PAD, y }, Size = { INNER - 76, 24 },
+  }
+  layout["Refresh"] = {
+    Style = "Button", Legend = "Refresh",
+    Position = { PAD + INNER - 72, y }, Size = { 72, 24 },
+  }
+  y = y + 34
+
+  -- Filter data -------------------------------------------------
+  graphics[#graphics + 1] = {
+    Type = "Text", Text = "Paste REW or CSV filter settings",
+    FontSize = 11, HTextAlign = "Left",
+    Position = { PAD, y }, Size = { INNER, 14 },
+  }
+  y = y + 16
+
+  layout["FilterData"] = {
+    Style = "TextBox", WordWrap = false, Multiline = true,
+    Position = { PAD, y }, Size = { INNER, 300 },
+  }
+  y = y + 310
+
+  -- File name ---------------------------------------------------
+  graphics[#graphics + 1] = {
+    Type = "Text", Text = "...or a file in the design folder (optional)",
+    FontSize = 10, HTextAlign = "Left",
+    Position = { PAD, y }, Size = { INNER, 13 },
+  }
+  y = y + 15
+
+  layout["FileName"] = {
+    Style = "TextBox", Position = { PAD, y }, Size = { INNER, 22 },
+  }
+  y = y + 32
+
+  -- Actions -----------------------------------------------------
+  layout["DryRun"] = {
+    Style = "Button", ButtonStyle = "Toggle",
+    Legend = "Dry Run", Color = { 200, 170, 60 },
+    Position = { PAD, y }, Size = { INNER / 2 - 4, 28 },
+  }
+  layout["Apply"] = {
+    Style = "Button", Legend = "Apply", Color = { 70, 130, 90 },
+    Position = { PAD + INNER / 2 + 4, y }, Size = { INNER / 2 - 4, 28 },
+  }
+  y = y + 36
+
+  -- Status ------------------------------------------------------
+  layout["Status"] = {
+    Style = "TextBox", WordWrap = false, Multiline = true, IsReadOnly = true,
+    Position = { PAD, y }, Size = { INNER, H - y - PAD },
+  }
+
+  return layout, graphics
+end
+
+-- ==================================================================
+-- RUNTIME
+-- ==================================================================
+
+if not Controls then return end
+
+-- ---- filter types ------------------------------------------------
+
+local TYPE_PK, TYPE_LS, TYPE_HS = "PK", "LS", "HS"
+local TYPE_LP, TYPE_HP, TYPE_NO, TYPE_AP = "LP", "HP", "NOTCH", "AP"
+
+local TYPE_ALIASES = {
+  PK = TYPE_PK, PEQ = TYPE_PK, PEAK = TYPE_PK, PEAKING = TYPE_PK, BELL = TYPE_PK,
+  LS = TYPE_LS, LSC = TYPE_LS, LOWSHELF = TYPE_LS, ["LOW SHELF"] = TYPE_LS,
+  HS = TYPE_HS, HSC = TYPE_HS, HIGHSHELF = TYPE_HS, ["HIGH SHELF"] = TYPE_HS,
+  LP = TYPE_LP, LPF = TYPE_LP, LOWPASS = TYPE_LP, ["LOW PASS"] = TYPE_LP,
+  HP = TYPE_HP, HPF = TYPE_HP, HIGHPASS = TYPE_HP, ["HIGH PASS"] = TYPE_HP,
+  NO = TYPE_NO, NOTCH = TYPE_NO,
+  AP = TYPE_AP, ALLPASS = TYPE_AP, ["ALL PASS"] = TYPE_AP,
+}
+
+local TYPE_LABEL = {
+  [TYPE_PK] = "Peaking", [TYPE_LS] = "Low Shelf", [TYPE_HS] = "High Shelf",
+  [TYPE_LP] = "Low Pass", [TYPE_HP] = "High Pass",
+  [TYPE_NO] = "Notch",    [TYPE_AP] = "All Pass",
+}
+
+local TYPE_CHOICES = {
+  [TYPE_PK] = { "parametric", "peaking", "peak", "bell" },
+  [TYPE_LS] = { "low-shelf", "low shelf", "lowshelf", "ls" },
+  [TYPE_HS] = { "high-shelf", "high shelf", "highshelf", "hs" },
+}
+
+local DEFAULT_SHELF_Q = 0.707
+
+local function normaliseType(raw)
+  if not raw then return nil end
+  return TYPE_ALIASES[raw:upper():gsub("^%s+", ""):gsub("%s+$", "")]
+end
+
+local function isShelf(t) return t == TYPE_LS or t == TYPE_HS end
+
+-- ---- Q <-> bandwidth ---------------------------------------------
+-- RBJ: N_octaves = (2/ln2) * asinh(1/(2Q)). Confirmed against the
+-- block's own defaults (1.00 oct <-> Q 1.41421365). Lua has no
+-- asinh, and math.sinh was removed in 5.4, so both are written out.
+
+local LN2 = math.log(2)
+
+local function qToOctaves(q)
+  if not q or q <= 0 then return 1.0 end
+  local x = 1 / (2 * q)
+  return (2 / LN2) * math.log(x + math.sqrt(x * x + 1))
+end
+
+local function octavesToQ(n)
+  if not n or n <= 0 then return 1.0 end
+  local x = LN2 / 2 * n
+  return 1 / (math.exp(x) - math.exp(-x))
+end
+
+-- ---- parsers -----------------------------------------------------
+--
+-- Both parsers split on record-start patterns rather than newlines.
+-- A Q-Sys text box may flatten a multi-line paste into a single line,
+-- and line-based parsing would then see one giant line and find
+-- nothing. Splitting on "Filter <n>:" and on type keywords survives
+-- that, so a flattened paste parses identically to a clean one.
+
+local function parseREW(text)
+  local filters, warnings = {}, {}
+
+  -- Cut the string at each "Filter <n>:" so each chunk is one record
+  -- regardless of whether newlines survived.
+  local starts = {}
+  local pos = 1
+  while true do
+    local s = text:find("Filter%s+%d+%s*:", pos)
+    if not s then break end
+    table.insert(starts, s)
+    pos = s + 1
+  end
+
+  for i, s in ipairs(starts) do
+    local chunk = text:sub(s, (starts[i + 1] or (#text + 1)) - 1)
+
+    local index = chunk:match("Filter%s+(%d+)%s*:")
+    local state = chunk:match("Filter%s+%d+%s*:%s*(%a+)")
+    local kind  = chunk:match("Filter%s+%d+%s*:%s*%a+%s+(%S+)")
+
+    if kind and kind:upper() == "NONE" then
+      -- Empty slot.
+    elseif state and state:upper() ~= "ON" then
+      table.insert(warnings, ("Filter %s is %s - skipped"):format(index, state))
+    else
+      local ftype = normaliseType(kind)
+      local freq  = tonumber(chunk:match("Fc%s+([%d%.]+)"))
+      local gain  = tonumber(chunk:match("Gain%s+(-?[%d%.]+)"))
+      local q     = tonumber(chunk:match("Q%s+([%d%.]+)"))
+
+      if not ftype then
+        table.insert(warnings, ("Filter %s: unrecognised type '%s' - skipped")
+          :format(tostring(index), tostring(kind)))
+      elseif not freq then
+        table.insert(warnings, ("Filter %s: no Fc found - skipped"):format(tostring(index)))
+      else
+        if not q and isShelf(ftype) then q = DEFAULT_SHELF_Q end
+        table.insert(filters, {
+          type = ftype, freq = freq, gain = gain or 0, q = q or 1.0,
+          source = "Filter " .. tostring(index),
+        })
+      end
+    end
+  end
+
+  return filters, warnings
+end
+
+local function parseCSV(text)
+  local filters, warnings = {}, {}
+
+  -- Normal case: real line breaks.
+  local rows = {}
+  for line in text:gmatch("[^\r\n]+") do table.insert(rows, line) end
+
+  -- Flattened case: one line holding everything. Pull whole records
+  -- out with gmatch, which advances past each match - scanning by
+  -- position instead would match inside every type token and emit one
+  -- junk row per letter. The header survives this because Freq(Hz)
+  -- is not numeric, so it never completes the pattern.
+  if #rows == 1 then
+    local rebuilt = {}
+    for record in rows[1]:gmatch("%a+%s*,%s*[%-%d%.]+%s*,%s*[%-%d%.]*%s*,%s*[%d%.]*") do
+      table.insert(rebuilt, record)
+    end
+    if #rebuilt > 1 then rows = rebuilt end
+  end
+
+  for rowNumber, line in ipairs(rows) do
+    local fields = {}
+    -- Trailing comma sentinel: shelf rows end with an empty Q field,
+    -- which gmatch would otherwise drop, shifting the columns.
+    for field in (line .. ","):gmatch("([^,]*),") do
+      table.insert(fields, (field:gsub("^%s+", ""):gsub("%s+$", "")))
+    end
+
+    local first = fields[1] or ""
+    if first == "" or first:upper():match("TYPE") then
+      -- Header or blank.
+    else
+      local ftype = normaliseType(first)
+      local freq  = tonumber(fields[2])
+      local gain  = tonumber(fields[3])
+      local q     = tonumber(fields[4])
+
+      if not ftype then
+        table.insert(warnings, ("Row %d: unrecognised type '%s' - skipped"):format(rowNumber, first))
+      elseif not freq then
+        table.insert(warnings, ("Row %d: no frequency - skipped"):format(rowNumber))
+      else
+        if not q and isShelf(ftype) then q = DEFAULT_SHELF_Q end
+        table.insert(filters, {
+          type = ftype, freq = freq, gain = gain or 0, q = q or 1.0,
+          source = "Row " .. rowNumber,
+        })
+      end
+    end
+  end
+
+  return filters, warnings
+end
+
+local function parse(text)
+  if text:match("Filter%s+%d+%s*:") then
+    return "REW", parseREW(text)
+  end
+  return "CSV", parseCSV(text)
+end
+
+-- ---- control discovery -------------------------------------------
+
+local ROLE_ALIASES = {
+  frequency = "freq", freq = "freq", fc = "freq",
+  gain = "gain", level = "gain",
+  bandwidth = "bw", bw = "bw",
+  ["q.factor"] = "q", q = "q", qfactor = "q",
+  type = "type", shape = "type",
+  bypass = "bypass", enable = "bypass",
+}
+
+local function splitControlName(name)
+  local lower = name:lower()
+
+  local role, n = lower:match("^(.+)%.(%d+)$")          -- frequency.1
+  if role then return ROLE_ALIASES[role], tonumber(n) end
+
+  local n2, role2 = lower:match("%.(%d+)%.([%a_%.]+)$") -- peq.1.freq
+  if n2 then return ROLE_ALIASES[role2], tonumber(n2) end
+
+  return nil, nil
+end
+
+-- Discovery only: what bands and roles exist, by NAME.
+--
+-- The objects Component.GetControls() hands back are a detached
+-- snapshot. Writing to them succeeds silently, reading them back
+-- returns what you wrote, and the DSP never changes - which looks
+-- exactly like a successful import. Only ever use them for names.
+local function mapBandNames(controls)
+  local bands, count = {}, 0
+  for _, control in ipairs(controls) do
+    local role, n = splitControlName(control.Name)
+    if role and n then
+      bands[n] = bands[n] or {}
+      bands[n][role] = control.Name
+      if n > count then count = n end
+    end
+  end
+  return bands, count
+end
+
+-- The live handles. Indexing the component by control name is what
+-- actually reaches the DSP.
+local function bindBands(component, controls)
+  local names, count = mapBandNames(controls)
+  local bands = {}
+
+  for n, roles in pairs(names) do
+    bands[n] = {}
+    for role, controlName in pairs(roles) do
+      local ok, handle = pcall(function() return component[controlName] end)
+      if ok and handle then bands[n][role] = handle end
+    end
+  end
+
+  return bands, count, names
+end
+
+-- Held at file scope so the component object cannot be collected
+-- while its control handles are still in use.
+local boundComponent = nil
+
+-- ---- status output -----------------------------------------------
+
+local lines = {}
+local function log(s) table.insert(lines, s or "") end
+local function flush()
+  local text = table.concat(lines, "\n")
+  Controls.Status.String = text
+  print(text)
+  lines = {}
+end
+
+-- ---- target discovery --------------------------------------------
+--
+-- Rather than filter on a component type string (which varies between
+-- Q-Sys versions), we open each component and keep the ones that
+-- actually expose per-band EQ controls. Self-validating, so a renamed
+-- or unusual EQ block still shows up.
+
+local function findEQBlocks()
+  local found = {}
+
+  for _, c in ipairs(Component.GetComponents()) do
+    local ok, comp = pcall(Component.New, c.Name)
+    if ok and comp then
+      local gotControls, controls = pcall(Component.GetControls, comp)
+      if gotControls and controls then
+        local bands, count = mapBandNames(controls)
+        if count > 0 and bands[1] and bands[1].freq and bands[1].gain then
+          table.insert(found, { name = c.Name, bands = count })
+        end
+      end
+    end
+  end
+
+  table.sort(found, function(a, b) return a.name < b.name end)
+  return found
+end
+
+local function refreshTargets()
+  local blocks = findEQBlocks()
+  local names = {}
+
+  for _, b in ipairs(blocks) do
+    table.insert(names, b.name)
+  end
+
+  Controls.TargetBlock.Choices = names
+
+  if #names == 0 then
+    log("No EQ blocks found in this design.")
+    log("The plugin looks for components exposing per-band frequency")
+    log("and gain controls. Check Script Access on your EQ block is")
+    log("set to Script, External or All.")
+    flush()
+    return
+  end
+
+  -- Keep the current selection if it survived the refresh.
+  local current = Controls.TargetBlock.String
+  local stillThere = false
+  for _, n in ipairs(names) do
+    if n == current then stillThere = true break end
+  end
+  if not stillThere then Controls.TargetBlock.String = names[1] end
+
+  log(("Found %d EQ block%s:"):format(#blocks, #blocks == 1 and "" or "s"))
+  for _, b in ipairs(blocks) do
+    log(("  %-26s %2d bands"):format(b.name, b.bands))
+  end
+  flush()
+end
+
+-- ---- input -------------------------------------------------------
+
+local function readDesignFile(name)
+  if not name or name == "" then return nil end
+  if type(io) ~= "table" or not io.open then
+    return nil, "file access unavailable"
+  end
+
+  -- Only the design/ sandbox is reachable; absolute paths are refused
+  -- by Q-Sys with "invalid path".
+  local path = name:match("^design/") and name or ("design/" .. name)
+  local handle, err = io.open(path, "r")
+  if not handle then return nil, tostring(err) end
+
+  local contents = handle:read("*a")
+  handle:close()
+  return contents, nil, path
+end
+
+-- ---- apply -------------------------------------------------------
+
+local function doImport()
+  local dryRun = Controls.DryRun.Boolean
+  local target = Controls.TargetBlock.String
+
+  if not target or target == "" then
+    log("No target selected. Press Refresh and pick an EQ block.")
+    flush()
+    return
+  end
+
+  -- Source: file name wins if it resolves, else the paste box.
+  local text, fileErr, usedPath = readDesignFile(Controls.FileName.String)
+  local sourceLabel
+
+  if text then
+    sourceLabel = "file"
+  else
+    if (Controls.FileName.String or "") ~= "" then
+      log(("Could not read '%s' - using pasted data.")
+        :format(Controls.FileName.String))
+    end
+    text = Controls.FilterData.String or ""
+    sourceLabel = "paste"
+  end
+
+  if text:match("^%s*$") then
+    log("Nothing to import - paste your EQ file above.")
+    flush()
+    return
+  end
+
+  local format, filters, warnings = parse(text)
+
+  log(("== EQ Import%s =="):format(dryRun and "  [DRY RUN]" or ""))
+  log(("Target: %s"):format(target))
+  log(("Source: %s   Format: %s   Filters: %d")
+    :format(sourceLabel, format, #filters))
+
+  for _, w in ipairs(warnings) do log("   ! " .. w) end
+
+  if #filters == 0 then
+    log("No filters recognised. Expected a REW filter")
+    log("settings export or Type,Freq,Gain,Q CSV.")
+    flush()
+    return
+  end
+
+  local ok, component = pcall(Component.New, target)
+  local gotControls, controls = false, nil
+  if ok and component then
+    gotControls, controls = pcall(Component.GetControls, component)
+  end
+
+  if not gotControls or not controls then
+    log(("Cannot open '%s'. Press Refresh."):format(target))
+    flush()
+    return
+  end
+
+  -- Keep the component alive for as long as its handles are used,
+  -- including inside the delayed verify pass.
+  boundComponent = component
+
+  local bands, bandCount, bandNames = bindBands(component, controls)
+  if bandCount == 0 then
+    log("That component exposes no per-band controls.")
+    flush()
+    return
+  end
+
+  if not (bands[1] and bands[1].freq) then
+    log("Could not bind live controls on this component.")
+    flush()
+    return
+  end
+
+  -- Types this block physically cannot produce.
+  local usable = {}
+  for _, f in ipairs(filters) do
+    if TYPE_CHOICES[f.type] then
+      table.insert(usable, f)
+    else
+      log(("! %s: %s unsupported - skipped")
+        :format(f.source, TYPE_LABEL[f.type] or f.type))
+    end
+  end
+
+  log(("Block: %d bands, %s")
+    :format(bandCount, (bands[1] and bands[1].q) and "bandwidth+Q" or "bandwidth only"))
+
+  -- Band count is a design property; refuse rather than truncate.
+  if #usable > bandCount then
+    log("")
+    log(("STOPPED: needs %d bands, block has %d.")
+      :format(#usable, bandCount))
+    log(("Set Bands to %d+ in the block's Properties."):format(#usable))
+    log("Nothing written.")
+    flush()
+    return
+  end
+
+  log("")
+  log(" #  ty      freq      gain      Q    width")
+
+  local pending = {}
+
+  for i, f in ipairs(usable) do
+    local band = bands[i]
+    local octaves = qToOctaves(f.q)
+
+    log(("%2d %s %9.2fHz %+6.2fdB Q%6.3f %5.3foct")
+      :format(i, f.type, f.freq, f.gain, f.q, octaves))
+
+    if not dryRun and band then
+      if band.type and band.type.Choices then
+        local matched = false
+        for _, want in ipairs(TYPE_CHOICES[f.type]) do
+          for _, choice in ipairs(band.type.Choices) do
+            if choice:lower() == want then
+              band.type.String = choice
+              matched = true
+              break
+            end
+          end
+          if matched then break end
+        end
+        if not matched then
+          log(("   ! band %d: no type choice matches %s"):format(i, TYPE_LABEL[f.type]))
+        end
+      end
+
+      if band.freq then band.freq.Value = f.freq end
+      if band.gain then band.gain.Value = f.gain end
+
+      -- Filter width lives in one of two linked controls. When the
+      -- block exposes q.factor that is the live one and bandwidth is
+      -- derived (writes to bandwidth are ignored); with bandwidth
+      -- alone, bandwidth is live. Prefer q where present - and if
+      -- that is wrong for some block, the verify pass below rewrites
+      -- via the other control instead of leaving the filter wrong.
+      local used = band.q and "q" or "bw"
+      if used == "q" then
+        band.q.Value = f.q
+      elseif band.bw then
+        band.bw.Value = octaves
+      end
+
+      if band.bypass then band.bypass.Value = 0 end
+
+      pending[i] = { f = f, octaves = octaves, used = used }
+    end
+  end
+
+  if #usable < bandCount then
+    log("")
+    log(("Flattening bands %d-%d to 0 dB."):format(#usable + 1, bandCount))
+    if not dryRun then
+      for i = #usable + 1, bandCount do
+        if bands[i] and bands[i].gain then bands[i].gain.Value = 0 end
+      end
+    end
+  end
+
+  log("")
+  if dryRun then
+    log("Dry run only. Untick Dry Run, then Apply.")
+    flush()
+    return
+  end
+
+  log(("Written to %s. Verifying..."):format(target))
+  flush()
+
+  -- Whichever width control we wrote, read the effective Q back and
+  -- compare against the file. That checks the Q->octave conversion
+  -- against the block's own maths rather than trusting the formula.
+  local function effectiveQ(band)
+    if band.q then return band.q.Value end
+    if band.bw then return octavesToQ(band.bw.Value) end
+    return nil
+  end
+
+  local function widthWrong(band, entry)
+    local measured = effectiveQ(band)
+    if not measured then return false end
+    return math.abs(measured - entry.f.q) > math.max(0.02, entry.f.q * 0.02)
+  end
+
+  local CONTROL_LABEL = { q = "q.factor", bw = "bandwidth" }
+
+  local verify
+  verify = function(isRetry)
+    local problems, retried, checked = {}, 0, 0
+    local failedControl
+
+    for i, entry in pairs(pending) do
+      local band, f = bands[i], entry.f
+      checked = checked + 1
+
+      if band.freq and math.abs(band.freq.Value - f.freq) > math.max(0.5, f.freq * 0.001) then
+        table.insert(problems, ("b%d freq: want %.2f, got %.2f")
+          :format(i, f.freq, band.freq.Value))
+      end
+
+      if band.gain and math.abs(band.gain.Value - f.gain) > 0.05 then
+        table.insert(problems, ("b%d gain: want %+.2f, got %+.2f (limit?)")
+          :format(i, f.gain, band.gain.Value))
+      end
+
+      if widthWrong(band, entry) then
+        local other = (entry.used == "q") and "bw" or "q"
+        local haveOther = (other == "q" and band.q) or (other == "bw" and band.bw)
+
+        if not isRetry and haveOther then
+          -- The control we chose is the derived one on this block.
+          -- Write the other and re-check rather than reporting a
+          -- failure we can still fix.
+          failedControl = entry.used
+          if other == "q" then band.q.Value = f.q else band.bw.Value = entry.octaves end
+          entry.used = other
+          retried = retried + 1
+        else
+          table.insert(problems, ("b%d width: want Q %.3f, got Q %.3f")
+            :format(i, f.q, effectiveQ(band) or 0))
+        end
+      end
+    end
+
+    if retried > 0 then
+      log(("%s ignored on %d band%s - retrying via %s...")
+        :format(CONTROL_LABEL[failedControl] or "?",
+                retried, retried == 1 and "" or "s",
+                CONTROL_LABEL[failedControl == "q" and "bw" or "q"] or "?"))
+      flush()
+      Timer.CallAfter(function() verify(true) end, 1)
+      return
+    end
+
+    -- Independent check: re-open the component from scratch and read
+    -- band 1 through a brand new handle. If the handles we wrote
+    -- through were ever detached from the DSP, everything above would
+    -- still "verify" while nothing actually changed. This is the only
+    -- check that can tell the difference.
+    local firstEntry = pending[1]
+    if firstEntry and bandNames[1] and bandNames[1].freq then
+      local freshOk, fresh = pcall(Component.New, target)
+      if freshOk and fresh then
+        local readOk, live = pcall(function() return fresh[bandNames[1].freq].Value end)
+        if readOk and live then
+          if math.abs(live - firstEntry.f.freq) > math.max(0.5, firstEntry.f.freq * 0.001) then
+            table.insert(problems, ("FRESH-HANDLE CHECK FAILED: band 1 reads %.2f Hz, "
+              .. "wrote %.2f Hz. Values are NOT reaching the DSP.")
+              :format(live, firstEntry.f.freq))
+          end
+        end
+      end
+    end
+
+    if #problems == 0 then
+      log(("All %d bands verified (freq, gain, Q)."):format(checked))
+      log("Fresh re-read confirms values reached the DSP.")
+    else
+      log(("%d discrepanc%s found:"):format(#problems, #problems == 1 and "y" or "ies"))
+      for _, p in ipairs(problems) do log("   ! " .. p) end
+      log("Block clamped/rejected these - not parse errors.")
+    end
+    flush()
+  end
+
+  Timer.CallAfter(function() verify(false) end, 1)
+end
+
+-- ---- wiring ------------------------------------------------------
+
+Controls.Refresh.EventHandler = refreshTargets
+Controls.Apply.EventHandler   = doImport
+
+Controls.Status.String = "Pick a block, paste filters, press Apply.\n"
+  .. "Engage Dry Run first for a preview."
+
+refreshTargets()
