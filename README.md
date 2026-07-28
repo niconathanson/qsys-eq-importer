@@ -4,7 +4,10 @@ Paste a room-correction filter list into Q-Sys Designer and have it typed into a
 Parametric EQ block for you — accurately, and in a form you can still adjust by hand
 afterwards.
 
-![The EQ Importer control panel](docs/images/panel.png)
+![Six REW filters imported into a 9-band Parametric EQ, with the resulting response curve](docs/images/applied-full.png)
+
+*Six filters from a REW export, written into a 9-band Parametric EQ block and read back
+to confirm they landed. Every band is still a normal band you can grab and adjust.*
 
 ---
 
@@ -57,7 +60,7 @@ runtime recall, and nothing to leave behind in a running system.
 
 ## Using it
 
-![Dry Run output](docs/images/dry-run.png)
+![The EQ Importer control panel with a target selected and filter data pasted in](docs/images/panel.png)
 
 1. Drag **EQ Importer** into your schematic and open its control panel.
 2. Press **Refresh**. Every EQ block in the design is listed with its band count. Pick
@@ -66,11 +69,18 @@ runtime recall, and nothing to leave behind in a running system.
    the design's own folder, type its name in the file box instead.)
 4. Tick **Dry Run** and press **Apply**. Read the table it prints — every band, with the
    Q from your file and the octave width it will write.
-5. Untick **Dry Run** and press **Apply** for real.
 
-The status pane then confirms each band was written and re-read correctly:
+   ![Dry Run preview showing each band's frequency, gain, Q and octave width](docs/images/dry-run.png)
 
-![Verification after applying](docs/images/applied.png)
+   Nothing has been touched at this point. The `width` column is the conversion: the
+   0.707 shelf Q at the top of the file becomes 1.900 octaves, which is what the block
+   actually stores.
+
+5. Untick **Dry Run** and press **Apply** for real. The status pane confirms each band
+   was written, then re-reads them through a fresh connection to prove the values
+   reached the DSP rather than just the script:
+
+   ![Verification message after a real import](docs/images/applied.png)
 
 Any bands beyond the ones your file uses are flattened to 0 dB, so you never end up with
 leftovers from a previous import.
