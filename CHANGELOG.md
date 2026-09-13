@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.1 - 2026-09-09
+
+Fixes error 418 (Max execution limits exceeded) on load in real designs.
+
+- Block discovery no longer opens and reads every component in the design. It now
+  pre-filters on the component type string and only reads controls from components
+  that look like an EQ, turning a hundred-plus heavy reads into a handful. Renamed
+  blocks still appear, because renaming changes a component's name, not its type.
+- If no component type matches, a bounded fallback scans by control shape up to a
+  fixed cap, so the execution limit cannot be hit even then.
+- The first scan is deferred off the load path, so the plugin loads instantly and
+  the scan runs in its own execution budget.
+
 ## 0.1.0 - 2026-07-27
 
 First public release.

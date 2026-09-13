@@ -25,7 +25,7 @@
 
 PluginInfo = {
   Name          = "Tools~EQ Importer",
-  Version       = "0.1.0",
+  Version       = "0.1.1",
   Id            = "b7c41e92-3f8a-4d16-9e5b-2a7c8d1f04b3",
   Author        = "Built for design-time tuning import",
   Description   = "Import REW or CSV parametric EQ settings into a Parametric EQ block",
@@ -402,23 +402,68 @@ end
 
 -- ---- target discovery --------------------------------------------
 --
--- Rather than filter on a component type string (which varies between
--- Q-Sys versions), we open each component and keep the ones that
--- actually expose per-band EQ controls. Self-validating, so a renamed
--- or unusual EQ block still shows up.
+-- A real design can hold a hundred-plus components. Opening every one
+-- and reading its full control list in a single pass exceeds the Q-Sys
+-- script execution limit (error 418: Max execution limits exceeded),
+-- which fired at load before the user could do anything.
+--
+-- Fix: pre-filter on the component TYPE string, which is free from
+-- GetComponents(), and only read controls from components that look
+-- like an EQ. That turns ~120 heavy reads into a handful. Renaming a
+-- block changes its NAME, not its TYPE, so renamed blocks still show
+-- up. If no type matches (an unusual build), a bounded fallback scans
+-- a capped number of components by control shape, so even then the
+-- limit cannot be hit.
+
+local EQ_TYPE_HINTS = { "equali", "parametric", "peq" }
+local FALLBACK_SCAN_LIMIT = 30
+
+local function looksLikeEQType(typeStr)
+  if not typeStr then return false end
+  local lower = tostring(typeStr):lower()
+  for _, hint in ipairs(EQ_TYPE_HINTS) do
+    if lower:find(hint, 1, true) then return true end
+  end
+  return false
+end
+
+-- Returns the band count if this component is a usable EQ, else nil.
+local function inspectComponent(name)
+  local ok, comp = pcall(Component.New, name)
+  if not ok or not comp then return nil end
+
+  local gotControls, controls = pcall(Component.GetControls, comp)
+  if not gotControls or not controls then return nil end
+
+  local bands, count = mapBandNames(controls)
+  if count > 0 and bands[1] and bands[1].freq and bands[1].gain then
+    return count
+  end
+  return nil
+end
 
 local function findEQBlocks()
   local found = {}
+  local components = Component.GetComponents()
 
-  for _, c in ipairs(Component.GetComponents()) do
-    local ok, comp = pcall(Component.New, c.Name)
-    if ok and comp then
-      local gotControls, controls = pcall(Component.GetControls, comp)
-      if gotControls and controls then
-        local bands, count = mapBandNames(controls)
-        if count > 0 and bands[1] and bands[1].freq and bands[1].gain then
-          table.insert(found, { name = c.Name, bands = count })
-        end
+  -- Fast lane: only read controls from type-matching components.
+  for _, c in ipairs(components) do
+    if looksLikeEQType(c.Type) then
+      local count = inspectComponent(c.Name)
+      if count then table.insert(found, { name = c.Name, bands = count }) end
+    end
+  end
+
+  -- Fallback: nothing matched by type. Scan the rest by control shape,
+  -- but only up to a fixed cap so the execution limit is never hit.
+  if #found == 0 then
+    local scanned = 0
+    for _, c in ipairs(components) do
+      if not looksLikeEQType(c.Type) then
+        scanned = scanned + 1
+        if scanned > FALLBACK_SCAN_LIMIT then break end
+        local count = inspectComponent(c.Name)
+        if count then table.insert(found, { name = c.Name, bands = count }) end
       end
     end
   end
@@ -762,4 +807,6 @@ Controls.Apply.EventHandler   = doImport
 Controls.Status.String = "Pick a block, paste filters, press Apply.\n"
   .. "Engage Dry Run first for a preview."
 
-refreshTargets()
+-- Defer the first scan off the load path: the plugin loads instantly,
+-- and the scan runs in its own execution budget instead of load-time's.
+Timer.CallAfter(refreshTargets, 0)
